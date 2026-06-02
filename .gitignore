@@ -40,3 +40,9 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 .factory
+
+# 多用户部署目录(只保留 .gitkeep 占位)
+/agent-data/*
+!/agent-data/.gitkeep
+/workspace/*
+!/workspace/.gitkeep

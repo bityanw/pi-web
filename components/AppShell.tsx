@@ -10,6 +10,7 @@ import { ModelsConfig } from "./ModelsConfig";
 import { SkillsConfig } from "./SkillsConfig";
 import { BranchNavigator } from "./BranchNavigator";
 import { useTheme } from "@/hooks/useTheme";
+import { UserMenu } from "./UserMenu";
 import type { SessionInfo, SessionTreeNode } from "@/lib/types";
 import type { ChatInputHandle } from "./ChatInput";
 
@@ -507,6 +508,9 @@ export function AppShell() {
               </div>
             );
           })()}
+          <div style={{ display: "flex", alignItems: "center", height: "100%", padding: "0 12px", borderLeft: "1px solid var(--border)" }}>
+            <UserMenu />
+          </div>
           {/* Top panel dropdown — shared, only one active at a time */}
           {activeTopPanel && topPanelPos && (
             <div style={{

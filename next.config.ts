@@ -11,7 +11,15 @@ try {
 
 const nextConfig: NextConfig = {
   serverExternalPackages: ["@earendil-works/pi-coding-agent", "@earendil-works/pi-ai"],
-  allowedDevOrigins: ['192.168.*.*'],
+  // dev 模式允许跨机访问(生产模式不需要)
+  // 加上你的实际网段,或用 '0.0.0.0/0' 全部允许
+  allowedDevOrigins: [
+    'localhost',
+    '127.0.0.1',
+    '192.168.*.*',
+    '172.16.*.*',
+    '10.*.*.*',
+  ],
   env: {
     NEXT_PUBLIC_APP_VERSION: version,
     NEXT_PUBLIC_PI_VERSION: piVersion,

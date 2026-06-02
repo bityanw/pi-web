@@ -9,27 +9,37 @@ export function getSessionsDir(): string {
   return `${getAgentDir()}/sessions`;
 }
 
-export async function listAllSessions(): Promise<SessionInfo[]> {
+export async function listAllSessions(opts?: { cwdPrefix?: string }): Promise<SessionInfo[]> {
   const piSessions: PiSessionInfo[] = await SessionManager.listAll();
   const pathToId = new Map<string, string>();
   for (const s of piSessions) pathToId.set(s.path, s.id);
 
   const cache = getPathCache();
-  return piSessions.map((s) => {
-    // Populate path cache so resolveSessionPath works without a full scan
-    cache.set(s.id, s.path);
-    return {
-      path: s.path,
-      id: s.id,
-      cwd: s.cwd,
-      name: s.name,
-      created: s.created instanceof Date ? s.created.toISOString() : String(s.created),
-      modified: s.modified instanceof Date ? s.modified.toISOString() : String(s.modified),
-      messageCount: s.messageCount,
-      firstMessage: s.firstMessage || "(no messages)",
-      parentSessionId: s.parentSessionPath ? pathToId.get(s.parentSessionPath) : undefined,
-    };
-  });
+  const prefix = opts?.cwdPrefix ? normalizePrefix(opts.cwdPrefix) : null;
+
+  return piSessions
+    // 多用户隔离:只返回 cwd 在用户工作目录前缀下的 session
+    .filter((s) => !prefix || normalizePrefix(s.cwd).startsWith(prefix))
+    .map((s) => {
+      // Populate path cache so resolveSessionPath works without a full scan
+      cache.set(s.id, s.path);
+      return {
+        path: s.path,
+        id: s.id,
+        cwd: s.cwd,
+        name: s.name,
+        created: s.created instanceof Date ? s.created.toISOString() : String(s.created),
+        modified: s.modified instanceof Date ? s.modified.toISOString() : String(s.modified),
+        messageCount: s.messageCount,
+        firstMessage: s.firstMessage || "(no messages)",
+        parentSessionId: s.parentSessionPath ? pathToId.get(s.parentSessionPath) : undefined,
+      };
+    });
+}
+
+// Windows / Unix 路径分隔符统一
+function normalizePrefix(p: string): string {
+  return p.replace(/\\/g, "/").replace(/\/+$/, "");
 }
 
 // ============================================================================

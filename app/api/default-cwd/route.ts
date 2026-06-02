@@ -1,17 +1,19 @@
 import { NextResponse } from "next/server";
-import { mkdirSync } from "fs";
-import { homedir } from "os";
-import { join } from "path";
+import { requireUser } from "@/lib/auth/current-user";
+import { getUserWorkspaceDir } from "@/lib/user-workspace";
 
 // POST /api/default-cwd
-// Creates ~/pi-cwd-<YYYYMMDD> if it doesn't exist and returns the path.
+// 返回当前用户的默认工作目录,自动创建。
+// 每人一个独立目录:$PI_CODING_AGENT_DIR/workspaces/<userId>/
 export async function POST() {
   try {
-    const date = new Date().toISOString().slice(0, 10).replace(/-/g, "");
-    const dir = join(homedir(), `pi-cwd-${date}`);
-    mkdirSync(dir, { recursive: true });
+    const user = await requireUser();
+    const dir = getUserWorkspaceDir(user.id);
     return NextResponse.json({ cwd: dir });
-  } catch (error) {
-    return NextResponse.json({ error: String(error) }, { status: 500 });
+  } catch (e) {
+    if (e instanceof Error && e.message === "Not authenticated") {
+      return NextResponse.json({ error: e.message }, { status: 401 });
+    }
+    return NextResponse.json({ error: String(e) }, { status: 500 });
   }
 }

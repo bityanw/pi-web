@@ -1,0 +1,106 @@
+# =============================================================================
+# pi-web Docker Compose
+# 用法:
+#   docker compose up -d              # 后台启动
+#   docker compose logs -f            # 看日志
+#   docker compose restart           # 重启
+#   docker compose down               # 停止(数据保留)
+#   docker compose down -v            # 停止并删除数据卷
+# =============================================================================
+
+services:
+  pi-web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: pi-web:latest
+    container_name: pi-web
+
+    restart: unless-stopped
+
+    ports:
+      # 宿主机:容器(改成 8080:30141 之类可换端口)
+      - "30141:30141"
+
+    environment:
+      # --- 必填:你的 LLM API 配置 ---
+      # 方式 1:把 .env 文件放在同目录,Compose 自动加载
+      # 方式 2:在这里直接写(不推荐,会进 git)
+      # - ANTHROPIC_API_KEY=sk-xxx
+
+      # --- 应用配置(默认值,一般不用改)---
+      NODE_ENV: production
+      PORT: "30141"
+      HOSTNAME: "0.0.0.0"
+      PI_CODING_AGENT_DIR: /data/agent
+
+      # JWT 签名密钥(可选,生产强烈建议设)
+      # 不设则首次启动自动生成到 /data/agent/pi-web-jwt-secret
+      # PI_JWT_SECRET: your-random-secret-at-least-32-bytes
+
+      # 是否允许自由注册(默认 true,生产建议 false)
+      # PI_ALLOW_REGISTER: "false"
+
+      # 关闭 Next.js 遥测
+      NEXT_TELEMETRY_DISABLED: "1"
+
+    volumes:
+      # 1. 持久化 agent 数据(会话、模型配置、用户、模型配置)
+      #    容器内 /data/agent → 宿主机 /home/pi/agent-data
+      - /home/pi/agent-data:/data/agent
+
+      # 2. 智能体的工作目录(agent 在这里读写文件)
+      #    容器内 /workspace → 宿主机 /home/pi/workspace
+      - /home/pi/workspace:/workspace:rw
+
+      # 3. (可选)从宿主机读环境变量
+      - ./.env:/app/.env:ro
+
+    # 非 root 用户(uid 1000),与镜像内创建的 piweb 用户对齐
+    user: "1000:1000"
+
+    # 健康检查(覆盖 Dockerfile 里的也行)
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:30141/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+    # 资源限制(按需调整,适合小机器起步)
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"       # 最多用 2 核
+          memory: 2G        # 最多 2GB 内存
+        reservations:
+          cpus: "0.5"
+          memory: 512M
+
+    # 日志配置(限制单个日志文件大小,防止磁盘爆掉)
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+    # 安全选项
+    security_opt:
+      - no-new-privileges:true
+
+    # 网络模式(默认 bridge,需要反代时改成 host 性能更好)
+    network_mode: bridge
+
+    # DNS(可选,国内服务器解析 docker hub 慢可以加)
+    # dns:
+    #   - 8.8.8.8
+    #   - 1.1.1.1
+
+# =============================================================================
+# 命名卷(可选,如果不想用 bind mount,改 volumes 段为:)
+#   pi-web-agent-data:/data/agent
+#   ./workspace:/workspace:rw
+# 并在最下面声明:
+#   volumes:
+#     pi-web-agent-data:
+# =============================================================================

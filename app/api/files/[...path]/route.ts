@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import fs from "fs";
 import path from "path";
 import { listAllSessions } from "@/lib/session-reader";
+import { requireUser } from "@/lib/auth/current-user";
+import { getUserWorkspaceDir } from "@/lib/user-workspace";
 
 const IGNORED_NAMES = new Set([
   "node_modules", ".git", ".next", "dist", "build", "__pycache__",
@@ -76,12 +78,11 @@ function getLanguage(filePath: string): string {
   return EXT_TO_LANGUAGE[ext] ?? "text";
 }
 
-// Short-TTL cache for the allowed-roots set. Without this, every file list/read
-// request re-scans every pi session on disk just to check access. 5s is short
-// enough that newly-created cwds appear promptly; stored on globalThis so it
-// survives Next.js hot-reload.
+// Short-TTL cache for the allowed-roots set, keyed by userId.
+// 5s TTL is short enough that newly-created cwds appear promptly;
+// stored on globalThis so it survives Next.js hot-reload.
 declare global {
-  var __piAllowedRootsCache: { roots: Set<string>; expiresAt: number } | undefined;
+  var __piAllowedRootsCache: Map<string, { roots: Set<string>; expiresAt: number }> | undefined;
 }
 
 const ALLOWED_ROOTS_TTL_MS = 5_000;
@@ -102,30 +103,26 @@ function filePathFromSegments(segments: string[]): string {
   return "/" + joined.replace(/^\/+/, "");
 }
 
-async function getAllowedRoots(): Promise<Set<string>> {
+async function getAllowedRoots(userId: string): Promise<Set<string>> {
   const now = Date.now();
-  const cached = globalThis.__piAllowedRootsCache;
-  if (cached && cached.expiresAt > now) return cached.roots;
+  if (!globalThis.__piAllowedRootsCache) globalThis.__piAllowedRootsCache = new Map();
+  const cache = globalThis.__piAllowedRootsCache;
+  const hit = cache.get(userId);
+  if (hit && hit.expiresAt > now) return hit.roots;
 
-  const sessions = await listAllSessions();
   const roots = new Set<string>();
+
+  // 1. 总是允许用户自己的工作空间
+  roots.add(getUserWorkspaceDir(userId));
+
+  // 2. 该用户 session 里的 cwd(只限他自己的 session)
+  const userHome = getUserWorkspaceDir(userId);
+  const sessions = await listAllSessions({ cwdPrefix: userHome });
   for (const s of sessions) {
     if (s.cwd) roots.add(s.cwd);
   }
-  // Also allow ~/pi-cwd-* directories created by the default-cwd endpoint
-  const home = (await import("os")).homedir();
-  const { readdirSync } = await import("fs");
-  try {
-    for (const name of readdirSync(home)) {
-      if (/^pi-cwd-\d{8}$/.test(name)) {
-        roots.add(path.join(home, name));
-      }
-    }
-  } catch {
-    // ignore if home is unreadable
-  }
 
-  globalThis.__piAllowedRootsCache = { roots, expiresAt: now + ALLOWED_ROOTS_TTL_MS };
+  cache.set(userId, { roots, expiresAt: now + ALLOWED_ROOTS_TTL_MS });
   return roots;
 }
 
@@ -249,11 +246,12 @@ export async function GET(
   { params }: { params: Promise<{ path: string[] }> }
 ) {
   try {
+    const user = await requireUser();
     const { path: segments } = await params;
     const filePath = filePathFromSegments(segments);
     const type = request.nextUrl.searchParams.get("type") ?? "list";
 
-    const allowedRoots = await getAllowedRoots();
+    const allowedRoots = await getAllowedRoots(user.id);
     if (!isPathAllowed(filePath, allowedRoots)) {
       return NextResponse.json({ error: "Access denied" }, { status: 403 });
     }

@@ -1,6 +1,15 @@
 import { NextResponse } from "next/server";
-import { homedir } from "os";
+import { requireUser } from "@/lib/auth/current-user";
+import { getUserWorkspaceDir } from "@/lib/user-workspace";
+
+export const dynamic = "force-dynamic";
 
 export async function GET() {
-  return NextResponse.json({ home: homedir() });
+  try {
+    const user = await requireUser();
+    return NextResponse.json({ home: getUserWorkspaceDir(user.id) });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return NextResponse.json({ error: msg }, { status: 401 });
+  }
 }
