@@ -4,19 +4,18 @@ import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { createCipheriv, createDecipheriv, randomBytes } from "crypto";
 
 /**
- * API Key 存储
+ * 用户级别 API Key 存储
  *
  * 数据布局($PI_CODING_AGENT_DIR/):
- *   pi-web-default-keys.json   - admin 配的全局默认 key
- *                                { "anthropic": "sk-xxx", "openai": "sk-yyy" }
- *   pi-web-user-keys.json      - 用户自己的 key(覆盖 default)
+ *   pi-web-user-keys.json      - 用户自己的 key(覆盖 admin 的 default model key)
  *                                { "<userId>": { "anthropic": "sk-zzz" } }
  *
  * 简单加密:用机器特定的密钥(随机生成,持久化)做 AES-256-GCM
  * 目的:不是防 root,是防 git 误提交 / 容器 layer 泄露
+ *
+ * 老的"per-provider admin default keys"已经废弃,统一用 lib/default-model.ts 的单 model 设计
  */
 
-const DEFAULT_KEYS_FILE = "pi-web-default-keys.json";
 const USER_KEYS_FILE = "pi-web-user-keys.json";
 const ENC_KEY_FILE = "pi-web-enc-key";
 
@@ -80,36 +79,6 @@ function writeJson(file: string, data: unknown): void {
   fs.renameSync(tmp, path);
 }
 
-// ---------- 默认 keys (admin) ----------
-
-export function getDefaultKeys(): Record<string, { configured: boolean; source: "default" | "user" | null }> {
-  const map = readJson<KeysMap>(DEFAULT_KEYS_FILE, {});
-  const result: Record<string, { configured: boolean; source: "default" | "user" | null }> = {};
-  for (const provider of Object.keys(map)) {
-    result[provider] = { configured: true, source: "default" };
-  }
-  return result;
-}
-
-export function getDefaultKey(provider: string): string | null {
-  const map = readJson<KeysMap>(DEFAULT_KEYS_FILE, {});
-  const v = map[provider];
-  if (!v) return null;
-  try { return dec(v); } catch { return null; }
-}
-
-export function setDefaultKey(provider: string, apiKey: string): void {
-  const map = readJson<KeysMap>(DEFAULT_KEYS_FILE, {});
-  map[provider] = enc(apiKey.trim());
-  writeJson(DEFAULT_KEYS_FILE, map);
-}
-
-export function deleteDefaultKey(provider: string): void {
-  const map = readJson<KeysMap>(DEFAULT_KEYS_FILE, {});
-  delete map[provider];
-  writeJson(DEFAULT_KEYS_FILE, map);
-}
-
 // ---------- 用户 keys (override) ----------
 
 export function getUserKey(userId: string, provider: string): string | null {
@@ -135,11 +104,9 @@ export function deleteUserKey(userId: string, provider: string): void {
   }
 }
 
-/** 解析一个用户最终用哪个 key:用户自己的 > admin 默认 */
-export function resolveApiKey(userId: string, provider: string): { key: string | null; source: "user" | "default" | null } {
-  const userKey = getUserKey(userId, provider);
-  if (userKey) return { key: userKey, source: "user" };
-  const defaultKey = getDefaultKey(provider);
-  if (defaultKey) return { key: defaultKey, source: "default" };
-  return { key: null, source: null };
+/** 从 key 中提取后 4 位(用于 UI 脱敏预览) */
+export function last4(key: string | null): string | null {
+  if (!key) return null;
+  const trimmed = key.trim();
+  return trimmed.length <= 4 ? trimmed : trimmed.slice(-4);
 }

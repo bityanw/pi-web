@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { formatBytes, type PerUserStat } from "@/lib/admin-stats-types";
 
 interface User {
   id: string;
@@ -14,6 +15,7 @@ interface User {
 
 export default function AdminUsersPage() {
   const [users, setUsers] = useState<User[]>([]);
+  const [statsById, setStatsById] = useState<Record<string, PerUserStat>>({});
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
   const [form, setForm] = useState({ username: "", displayName: "", password: "", role: "user" as "user" | "admin" });
@@ -22,9 +24,18 @@ export default function AdminUsersPage() {
 
   async function load() {
     setLoading(true);
-    const r = await fetch("/api/admin/users");
-    const d = await r.json();
-    if (r.ok) setUsers(d.users);
+    const [ur, sr] = await Promise.all([
+      fetch("/api/admin/users"),
+      fetch("/api/admin/stats"),
+    ]);
+    const ud = await ur.json();
+    if (ur.ok) setUsers(ud.users);
+    if (sr.ok) {
+      const sd = await sr.json() as { perUser: PerUserStat[] };
+      const map: Record<string, PerUserStat> = {};
+      for (const s of sd.perUser) map[s.userId] = s;
+      setStatsById(map);
+    }
     setLoading(false);
   }
 
@@ -82,7 +93,8 @@ export default function AdminUsersPage() {
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
         <h1 style={{ margin: 0, fontSize: 20 }}>👥 用户管理</h1>
         <div style={{ display: "flex", gap: 8 }}>
-          <a href="/" style={btnLink}>← 返回</a>
+          <a href="/admin" style={btnLink}>← Dashboard</a>
+          <a href="/" style={btnLink}>返回主页</a>
           <button onClick={() => setShowCreate((v) => !v)} style={btnPrimary}>{showCreate ? "取消" : "+ 新建用户"}</button>
         </div>
       </div>
@@ -118,29 +130,44 @@ export default function AdminUsersPage() {
               <th style={th}>显示名</th>
               <th style={th}>角色</th>
               <th style={th}>状态</th>
+              <th style={th}>活跃</th>
+              <th style={th}>Session</th>
+              <th style={th}>存储</th>
               <th style={th}>最近登录</th>
+              <th style={th}>最后活跃</th>
               <th style={th}>操作</th>
             </tr>
           </thead>
           <tbody>
-            {users.map((u) => (
-              <tr key={u.id} style={{ opacity: u.disabled ? 0.5 : 1 }}>
-                <td style={td}><code>{u.username}</code></td>
-                <td style={td}>{u.displayName}</td>
-                <td style={td}>
-                  <select value={u.role} onChange={(e) => changeRole(u, e.target.value as "admin" | "user")} style={{ ...input, padding: "4px 8px" }}>
-                    <option value="user">user</option>
-                    <option value="admin">admin</option>
-                  </select>
-                </td>
-                <td style={td}>{u.disabled ? "🚫 禁用" : "✅ 正常"}</td>
-                <td style={td}>{u.lastLoginAt ? new Date(u.lastLoginAt).toLocaleString("zh-CN") : "从未"}</td>
-                <td style={td}>
-                  <button onClick={() => toggleDisabled(u)} style={btnSmall}>{u.disabled ? "启用" : "禁用"}</button>
-                  <button onClick={() => remove(u)} style={{ ...btnSmall, color: "#c00" }}>删除</button>
-                </td>
-              </tr>
-            ))}
+            {users.map((u) => {
+              const s = statsById[u.id];
+              return (
+                <tr key={u.id} style={{ opacity: u.disabled ? 0.5 : 1 }}>
+                  <td style={td}><code>{u.username}</code></td>
+                  <td style={td}>{u.displayName}</td>
+                  <td style={td}>
+                    <select value={u.role} onChange={(e) => changeRole(u, e.target.value as "admin" | "user")} style={{ ...input, padding: "4px 8px" }}>
+                      <option value="user">user</option>
+                      <option value="admin">admin</option>
+                    </select>
+                  </td>
+                  <td style={td}>{u.disabled ? "🚫 禁用" : "✅ 正常"}</td>
+                  <td style={td}>
+                    {s?.isActive
+                      ? <span style={{ color: "#22c55e" }}>● 活跃</span>
+                      : <span style={{ color: "#999" }}>○ 沉睡</span>}
+                  </td>
+                  <td style={td}>{s?.sessionCount ?? "—"}</td>
+                  <td style={td}>{s ? formatBytes(s.workspaceBytes) : "—"}</td>
+                  <td style={td}>{u.lastLoginAt ? new Date(u.lastLoginAt).toLocaleString("zh-CN") : "从未"}</td>
+                  <td style={td}>{s?.lastActivity ? new Date(s.lastActivity).toLocaleString("zh-CN") : "—"}</td>
+                  <td style={td}>
+                    <button onClick={() => toggleDisabled(u)} style={btnSmall}>{u.disabled ? "启用" : "禁用"}</button>
+                    <button onClick={() => remove(u)} style={{ ...btnSmall, color: "#c00" }}>删除</button>
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       )}

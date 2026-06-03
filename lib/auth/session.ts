@@ -26,12 +26,22 @@ export interface SessionPayload {
 }
 
 // ---------- JWT 密钥管理 ----------
-// 第一次启动时生成,持久化到 agent dir,保证重启后 token 仍然有效
+// 优先用环境变量 PI_JWT_SECRET(支持 edge runtime / middleware)
+// 备选:从 agent dir 读文件(nodejs runtime 首次启动时生成)
 
 let cachedSecret: Uint8Array | null = null;
 
 function getSecret(): Uint8Array {
   if (cachedSecret) return cachedSecret;
+
+  // 1. 优先:环境变量(edge runtime 也能用)
+  const envSecret = process.env.PI_JWT_SECRET;
+  if (envSecret && envSecret.length >= 16) {
+    cachedSecret = new TextEncoder().encode(envSecret);
+    return cachedSecret;
+  }
+
+  // 2. 备选:从文件读(仅 nodejs runtime,edge 下 fs 不存在会报错被 catch)
   const path = join(getAgentDir(), SECRET_FILE);
   if (existsSync(path)) {
     const hex = readFileSync(path, "utf8").trim();

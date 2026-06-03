@@ -93,11 +93,11 @@ export function UserMenu() {
           </div>
           {user.role === "admin" && (
             <>
+              <MenuItem onClick={() => { setOpen(false); router.push("/admin"); }}>
+                📊 Dashboard
+              </MenuItem>
               <MenuItem onClick={() => { setOpen(false); router.push("/admin/users"); }}>
                 👥 用户管理
-              </MenuItem>
-              <MenuItem onClick={() => { setOpen(false); router.push("/admin/default-keys"); }}>
-                🔑 默认 API Key
               </MenuItem>
             </>
           )}

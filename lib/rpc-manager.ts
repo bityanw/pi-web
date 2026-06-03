@@ -286,12 +286,23 @@ export async function startRpcSession(
   if (inflight) return inflight;
 
   const starting = (async () => {
-    const { SessionManager, getAgentDir } = await import("@earendil-works/pi-coding-agent");
+    const { SessionManager, getAgentDir, AuthStorage } = await import("@earendil-works/pi-coding-agent");
     const agentDir = getAgentDir();
 
     const sessionManager = sessionFile
       ? SessionManager.open(sessionFile, undefined)
       : SessionManager.create(cwd, undefined);
+
+    // 为本次 session 装上 admin 默认 model 的 key(其他 key 优先级由 agent 自身处理:
+    // 用户自己的 key 存储在 $PI_CODING_AGENT_DIR/auth.json 里,这里不重复注入;
+    // 如需要按 session 隔离,后续可以加 userId 参数)
+    const { getDefaultModelKey, getDefaultModelMeta } = await import("@/lib/default-model");
+    const authStorage = AuthStorage.create();
+    const adminDefault = getDefaultModelMeta();
+    if (adminDefault) {
+      const k = getDefaultModelKey();
+      if (k) authStorage.setRuntimeApiKey(adminDefault.provider, k);
+    }
 
     // Determine which tools to pass based on requested toolNames.
     // Since v0.68.0, createAgentSession expects string[] tool names instead of Tool[] instances.
@@ -306,6 +317,7 @@ export async function startRpcSession(
       cwd,
       agentDir,
       sessionManager,
+      authStorage,
       ...(toolsOption !== undefined ? { tools: toolsOption } : {}),
     });
 

@@ -81,6 +81,13 @@ interface ApiKeyProvider {
   configured: boolean;
   source?: string;
   modelCount: number;
+  // 多用户 key 来源
+  effectiveSource?: "user" | "default" | null;
+  effectiveLast4?: string | null;
+  userHasKey?: boolean;
+  userLast4?: string | null;
+  defaultHasKey?: boolean;
+  defaultLast4?: string | null;
 }
 
 type OAuthLoginState =
@@ -125,7 +132,8 @@ type Selection =
   | { type: "provider"; name: string }
   | { type: "model"; providerName: string; index: number }
   | { type: "oauth"; providerId: string }
-  | { type: "apikey"; providerId: string };
+  | { type: "apikey"; providerId: string }
+  | { type: "adminDefault" };
 
 const API_OPTIONS = ["openai-completions", "openai-responses", "anthropic-messages", "google-generative-ai"] as const;
 
@@ -881,31 +889,67 @@ function ApiKeyDetail({ provider, onRefresh }: { provider: ApiKeyProvider; onRef
     }
   }, [provider.id, onRefresh]);
 
+  // 状态优先级:user key > admin default key > 未配置
+  // 注意：这里的 provider.effectiveSource 是 "user" | "default" | null
+  const usingUserKey = provider.userHasKey === true;
+  const hasDefault = provider.defaultHasKey === true;
+  const last4 = provider.effectiveLast4;
+
+  // 决定状态 pill 的颜色和文本
+  let pillBg = "var(--bg-panel)";
+  let pillColor = "var(--text-dim)";
+  let pillDot = "var(--border)";
+  let pillText: string;
+  if (usingUserKey) {
+    pillBg = "rgba(74,222,128,0.12)";
+    pillColor = "#4ade80";
+    pillDot = "#4ade80";
+    pillText = `您自己的 key · ··${provider.userLast4}`;
+  } else if (hasDefault) {
+    pillBg = "rgba(250,204,21,0.12)";
+    pillColor = "#facc15";
+    pillDot = "#facc15";
+    pillText = `管理员默认 key · ··${provider.defaultLast4}`;
+  } else {
+    pillText = "未配置";
+  }
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
         <SectionTitle>API Key</SectionTitle>
-        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-          <span style={{ width: 7, height: 7, borderRadius: "50%", background: provider.configured ? "#4ade80" : "var(--border)", display: "inline-block" }} />
-          <span style={{ fontSize: 11, color: provider.configured ? "#4ade80" : "var(--text-dim)" }}>
-            {provider.configured ? "configured" : "not configured"}
-          </span>
+        <div style={{
+          display: "flex", alignItems: "center", gap: 6,
+          padding: "3px 8px", borderRadius: 4,
+          background: pillBg, color: pillColor,
+          fontSize: 11, fontFamily: "var(--font-mono, monospace)",
+        }}>
+          <span style={{ width: 6, height: 6, borderRadius: "50%", background: pillDot, display: "inline-block" }} />
+          {pillText}
         </div>
       </div>
 
       <p style={{ margin: 0, fontSize: 12, color: "var(--text-muted)", lineHeight: 1.5 }}>
-        {provider.configured
-          ? `API key is stored. Enter a new key below to replace it, or disconnect to remove it.`
-          : `Enter your ${provider.displayName} API key to enable ${provider.modelCount} model${provider.modelCount !== 1 ? "s" : ""}.`}
+        {usingUserKey
+          ? `当前使用您自己配置的 key (··${provider.userLast4})。您可以在下方输入新 key 替换，或删除以回退到管理员默认 key${hasDefault ? ` (··${provider.defaultLast4})` : ""}。`
+          : hasDefault
+          ? `当前使用管理员配置的默认 key (··${provider.defaultLast4})。您可以在下方输入自己的 key 覆盖。`
+          : provider.configured
+          ? `API key 已配置（来自环境变量）。您可以在下方输入自己的 key 覆盖。`
+          : `未配置 key。${provider.modelCount > 0 ? `请输入您的 ${provider.displayName} API key 以启用 ${provider.modelCount} 个模型。` : `请输入您的 ${provider.displayName} API key。`}`}
       </p>
 
-      <Field label="API Key">
+      <Field label={usingUserKey ? "替换为新 key" : hasDefault ? "用自己的 key 覆盖" : "API Key"}>
         <div style={{ display: "flex", gap: 6 }}>
           <SecretTextInput
             value={apiKey}
             onChange={setApiKey}
             onKeyDown={(e) => { if (e.key === "Enter" && apiKey.trim()) handleSave(); }}
-            placeholder={provider.configured ? "Enter new key to replace…" : "sk-…"}
+            placeholder={usingUserKey
+              ? "输入新 key 替换您当前的 key…"
+              : hasDefault
+              ? "输入您的 key 以覆盖管理员默认…"
+              : "sk-…"}
             style={{ flex: 1 }}
             autoComplete="off"
             spellCheck={false}
@@ -936,19 +980,220 @@ function ApiKeyDetail({ provider, onRefresh }: { provider: ApiKeyProvider; onRef
 
       {error && <p style={{ margin: 0, fontSize: 12, color: "#f87171" }}>{error}</p>}
 
-      {provider.configured && (
-        <button
-          onClick={handleRemove}
-          disabled={removing}
-          style={{
-            alignSelf: "flex-start", padding: "5px 12px",
-            background: "none", border: "1px solid rgba(239,68,68,0.3)",
-            borderRadius: 5, color: "#ef4444",
-            cursor: removing ? "not-allowed" : "pointer", fontSize: 12,
-          }}
-        >
-          {removing ? "Removing…" : "Disconnect"}
-        </button>
+      {usingUserKey && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          <button
+            onClick={handleRemove}
+            disabled={removing}
+            style={{
+              alignSelf: "flex-start", padding: "5px 12px",
+              background: "none", border: "1px solid rgba(239,68,68,0.3)",
+              borderRadius: 5, color: "#ef4444",
+              cursor: removing ? "not-allowed" : "pointer", fontSize: 12,
+            }}
+          >
+            {removing ? "Removing…" : `删除我的 key(将回退到管理员默认${hasDefault ? ` ··${provider.defaultLast4}` : ""})`}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Admin default model detail ────────────────────────────────────────────────
+
+interface AdminDefaultConfig {
+  provider: string;
+  modelId: string;
+  displayName?: string;
+  apiKeyLast4: string | null;
+  hasApiKey: boolean;
+  apiKey?: string;        // admin 自己看到的明文
+  updatedAt?: string;
+  updatedBy?: string;
+}
+
+interface AvailableModel { id: string; name: string; provider: string }
+
+function AdminDefaultDetail({ onClose, onSaved }: { onClose: () => void; onSaved?: () => void }) {
+  const [config, setConfig] = useState<AdminDefaultConfig | null>(null);
+  const [models, setModels] = useState<AvailableModel[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [provider, setProvider] = useState("");
+  const [modelId, setModelId] = useState("");
+  const [apiKey, setApiKey] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [savedOk, setSavedOk] = useState(false);
+
+  async function load() {
+    setLoading(true);
+    const [ml, cfg] = await Promise.all([
+      fetch("/api/models").then((r) => r.json()) as Promise<{ modelList: AvailableModel[] }>,
+      fetch("/api/admin/default-model").then((r) => r.json()) as Promise<{ config: AdminDefaultConfig | null }>,
+    ]);
+    setModels(ml.modelList ?? []);
+    setConfig(cfg.config);
+    if (cfg.config) {
+      setProvider(cfg.config.provider);
+      setModelId(cfg.config.modelId);
+    }
+    setLoading(false);
+  }
+
+  useEffect(() => { load(); }, []);
+
+  const providers = Array.from(new Set(models.map((m) => m.provider))).sort();
+  const modelsForProvider = provider ? models.filter((m) => m.provider === provider) : [];
+
+  async function save() {
+    setError(null); setSavedOk(false); setBusy(true);
+    try {
+      const m = models.find((x) => x.provider === provider && x.id === modelId);
+      const r = await fetch("/api/admin/default-model", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          provider, modelId, apiKey,
+          displayName: m?.name ?? provider,
+        }),
+      });
+      const d = await r.json() as { success?: boolean; error?: string; config?: AdminDefaultConfig };
+      if (!r.ok) throw new Error(d.error || `HTTP ${r.status}`);
+      setSavedOk(true);
+      setApiKey("");
+      setTimeout(() => setSavedOk(false), 2000);
+      await load();
+      onSaved?.();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally { setBusy(false); }
+  }
+
+  async function remove() {
+    if (!confirm("确定删除系统默认模型?删除后所有用户需要自己选 model + 提供 key 才能用。")) return;
+    setError(null); setBusy(true);
+    try {
+      const r = await fetch("/api/admin/default-model", { method: "DELETE" });
+      const d = await r.json() as { success?: boolean; error?: string };
+      if (!r.ok) throw new Error(d.error || `HTTP ${r.status}`);
+      setProvider(""); setModelId(""); setApiKey("");
+      await load();
+      onSaved?.();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally { setBusy(false); }
+  }
+
+  return (
+    <div style={{ flex: 1, overflowY: "auto", padding: "20px 24px" }}>
+      <div style={{ marginBottom: 18 }}>
+        <h3 style={{ margin: 0, fontSize: 14, fontWeight: 600, color: "var(--text)" }}>
+          🤖 系统默认模型
+        </h3>
+        <p style={{ margin: "4px 0 0", fontSize: 12, color: "var(--text-muted)", lineHeight: 1.6 }}>
+          这里配置的模型 + Key 会被作为<strong>所有用户</strong>的默认。
+          用户登录后看到的主页 model 下拉默认就是这个,可以改成别的。
+        </p>
+      </div>
+
+      {loading ? <p style={{ color: "var(--text-muted)" }}>加载中…</p> : (
+        <>
+          {config?.hasApiKey && (
+            <div style={{
+              background: "rgba(34,197,94,0.08)",
+              border: "1px solid rgba(34,197,94,0.25)",
+              borderRadius: 6, padding: "10px 14px", marginBottom: 18,
+              fontSize: 12, color: "#166534",
+            }}>
+              ✅ 当前已配置:<strong style={{ marginLeft: 4 }}>{config.displayName ?? config.modelId}</strong>
+              <span style={{ marginLeft: 8, color: "#666" }}>· {config.provider}</span>
+              <span style={{ marginLeft: 8 }}>· Key ··{config.apiKeyLast4}</span>
+              {config.updatedBy && <span style={{ marginLeft: 8 }}>· by {config.updatedBy}</span>}
+              {config.updatedAt && <span style={{ marginLeft: 8 }}>· {new Date(config.updatedAt).toLocaleString("zh-CN")}</span>}
+            </div>
+          )}
+
+          <Field label="Provider">
+            <select
+              value={provider}
+              onChange={(e) => { setProvider(e.target.value); setModelId(""); }}
+              style={{ ...inputStyle, color: provider ? "var(--text)" : "var(--text-dim)" }}
+            >
+              <option value="">— 选择 provider —</option>
+              {providers.map((p) => <option key={p} value={p}>{p}</option>)}
+            </select>
+          </Field>
+          <Field label="Model">
+            <select
+              value={modelId}
+              onChange={(e) => setModelId(e.target.value)}
+              style={{ ...inputStyle, color: modelId ? "var(--text)" : "var(--text-dim)" }}
+              disabled={!provider}
+            >
+              <option value="">— {provider ? "选择 model" : "先选 provider"} —</option>
+              {modelsForProvider.map((m) => (
+                <option key={m.id} value={m.id}>{m.name}{m.name !== m.id ? ` (${m.id})` : ""}</option>
+              ))}
+            </select>
+          </Field>
+          <Field label="API Key">
+            <input
+              type="password"
+              value={apiKey}
+              onChange={(e) => setApiKey(e.target.value)}
+              placeholder={config?.hasApiKey ? `当前 ··${config.apiKeyLast4}(输入新 key 覆盖)` : "sk-..."}
+              style={inputStyle}
+              autoComplete="off"
+              spellCheck={false}
+            />
+          </Field>
+
+          {error && (
+            <div style={{ padding: "8px 12px", background: "#fff0f0", border: "1px solid #ffcccc", color: "#c00", fontSize: 12, borderRadius: 4, marginBottom: 10 }}>
+              {error}
+            </div>
+          )}
+
+          <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
+            <button
+              onClick={save}
+              disabled={busy || !provider || !modelId || !apiKey.trim() || savedOk}
+              style={{
+                padding: "8px 18px",
+                background: savedOk ? "#16a34a" : (busy || !provider || !modelId || !apiKey.trim() ? "#999" : "#0a7"),
+                color: "white", border: 0, borderRadius: 4, cursor: "pointer", fontSize: 13, fontWeight: 600,
+              }}
+            >
+              {savedOk ? "✓ 已保存" : busy ? "保存中…" : "保存"}
+            </button>
+            {config?.hasApiKey && (
+              <button
+                onClick={remove}
+                disabled={busy}
+                style={{
+                  padding: "8px 14px",
+                  background: "transparent", color: "#c00",
+                  border: "1px solid #fcc", borderRadius: 4, cursor: "pointer", fontSize: 13,
+                }}
+              >
+                删除默认模型
+              </button>
+            )}
+            <button onClick={onClose} style={{
+              padding: "8px 14px", background: "transparent", color: "#666",
+              border: "1px solid #ddd", borderRadius: 4, cursor: "pointer", fontSize: 13,
+            }}>关闭</button>
+          </div>
+
+          <div style={{ marginTop: 20, padding: 12, background: "rgba(59,130,246,0.06)", border: "1px solid rgba(59,130,246,0.2)", borderRadius: 6, color: "#1e40af", fontSize: 11, lineHeight: 1.7 }}>
+            💡 <strong>解析优先级</strong>(从高到低):<br />
+            1️⃣ 用户在 ModelsConfig 配的<strong>自己的 Key</strong>(Provider 下的 "您")  <br />
+            2️⃣ <strong>这里配置的系统默认 model + Key</strong>  <br />
+            3️⃣ 环境变量(ANTHROPIC_API_KEY / OPENAI_API_KEY 等)  <br />
+            4️⃣ models.json 里的 apiKey
+          </div>
+        </>
       )}
     </div>
   );
@@ -1112,6 +1357,15 @@ export function ModelsConfig({ onClose }: { onClose: () => void }) {
   const [oauthProviders, setOauthProviders] = useState<OAuthProvider[]>([]);
   const [apiKeyProviders, setApiKeyProviders] = useState<ApiKeyProvider[]>([]);
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
+
+  // 检测当前用户角色
+  useEffect(() => {
+    fetch("/api/auth/me")
+      .then((r) => r.json() as Promise<{ user?: { role?: string } }>)
+      .then((d) => setIsAdmin(d.user?.role === "admin"))
+      .catch(() => {});
+  }, []);
 
   const loadOAuthProviders = useCallback(() => {
     fetch("/api/auth/providers")
@@ -1252,6 +1506,9 @@ export function ModelsConfig({ onClose }: { onClose: () => void }) {
       if (!p) return null;
       return <ApiKeyDetail key={p.id} provider={p} onRefresh={loadApiKeyProviders} />;
     }
+    if (selection.type === "adminDefault") {
+      return <AdminDefaultDetail key="adminDefault" onClose={onClose} onSaved={() => loadApiKeyProviders()} />;
+    }
     if (selection.type === "provider") {
       const provider = config.providers?.[selection.name];
       if (!provider) return null;
@@ -1300,6 +1557,27 @@ export function ModelsConfig({ onClose }: { onClose: () => void }) {
           {/* Left: tree */}
           <div style={{ width: 210, borderRight: "1px solid var(--border)", display: "flex", flexDirection: "column", flexShrink: 0, background: "var(--bg-panel)" }}>
             <div style={{ flex: 1, overflowY: "auto", padding: "8px 6px" }}>
+              {/* Admin: 系统默认 model section */}
+              {isAdmin && (
+                <div
+                  onClick={() => setSelection({ type: "adminDefault" })}
+                  style={{
+                    display: "flex", alignItems: "center", gap: 7, padding: "5px 8px", borderRadius: 5,
+                    cursor: "pointer",
+                    background: selection?.type === "adminDefault" ? "var(--bg-selected)" : "none",
+                  }}
+                  onMouseEnter={(e) => { if (selection?.type !== "adminDefault") e.currentTarget.style.background = "var(--bg-hover)"; }}
+                  onMouseLeave={(e) => { if (selection?.type !== "adminDefault") e.currentTarget.style.background = "none"; }}
+                >
+                  <span style={{ fontSize: 14 }}>🤖</span>
+                  <span style={{ fontSize: 12, color: "var(--text)", fontWeight: 600, flex: 1 }}>系统默认 model</span>
+                  <span style={{
+                    fontSize: 9, fontWeight: 600, padding: "1px 5px", borderRadius: 3,
+                    background: "rgba(250,204,21,0.18)", color: "#facc15", flexShrink: 0,
+                  }}>admin</span>
+                </div>
+              )}
+
               {/* Active OAuth subscriptions */}
               {activeOAuth.map((p) => {
                 const isSelected = selection?.type === "oauth" && selection.providerId === p.id;
@@ -1320,6 +1598,11 @@ export function ModelsConfig({ onClose }: { onClose: () => void }) {
               {/* Active API key providers */}
               {activeApiKey.map((p) => {
                 const isSelected = selection?.type === "apikey" && selection.providerId === p.id;
+                const srcBadge = p.userHasKey
+                  ? { text: "您的", bg: "rgba(74,222,128,0.18)", color: "#4ade80" }
+                  : p.defaultHasKey
+                  ? { text: "默认", bg: "rgba(250,204,21,0.18)", color: "#facc15" }
+                  : null;
                 return (
                   <div
                     key={p.id}
@@ -1330,6 +1613,16 @@ export function ModelsConfig({ onClose }: { onClose: () => void }) {
                   >
                     <ProviderIcon id={p.id} size={16} />
                     <span style={{ fontSize: 12, color: "var(--text)", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.displayName}</span>
+                    {srcBadge && (
+                      <span style={{
+                        fontSize: 9, fontWeight: 600,
+                        padding: "1px 5px", borderRadius: 3,
+                        background: srcBadge.bg, color: srcBadge.color,
+                        flexShrink: 0,
+                      }}>
+                        {srcBadge.text}
+                      </span>
+                    )}
                   </div>
                 );
               })}

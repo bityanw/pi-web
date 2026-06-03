@@ -9,6 +9,8 @@
 | 第一个注册用户 | - | ✅ 自动成为 admin |
 | 工作目录 | ❌ 全员共享 | ✅ 每人独立 |
 | API Key | ❌ 全员共享 | ✅ Admin 配默认 + 用户可覆盖 |
+| 默认模型 | ❌ | ✅ Admin 选一个 model + key,用户登录后默认使用 |
+| Provider 列表 | ❌ | ✅ 动态 29 个 provider(不写死) |
 | 用户管理 | ❌ | ✅ Admin 界面 |
 | 会话数据 | 共享 | 物理隔离(在用户目录里) |
 
@@ -17,7 +19,8 @@
 ```
 $PI_CODING_AGENT_DIR/
 ├── pi-web-users.json           # 用户列表
-├── pi-web-default-keys.json    # Admin 配的默认 API Key(加密)
+├── pi-web-default-keys.json    # Admin 配的默认 API Key(加密, 按 provider)
+├── pi-web-default-model.json   # Admin 配的系统默认 model + key(明文,与 models.json 风格一致)
 ├── pi-web-user-keys.json       # 每个用户自己的 API Key(加密)
 ├── pi-web-jwt-secret           # JWT 签名密钥(自动生成)
 ├── pi-web-enc-key              # API key 加密密钥(自动生成)
