@@ -1628,12 +1628,13 @@ export function ModelsConfig({ onClose }: { onClose: () => void }) {
               })}
 
               {/* Divider before custom providers, only when there are active managed providers */}
-              {(activeOAuth.length > 0 || activeApiKey.length > 0) && providers.length > 0 && (
+              {/* 只有 admin 看得到 custom providers + Add provider 按钮 */}
+              {isAdmin && (activeOAuth.length > 0 || activeApiKey.length > 0) && providers.length > 0 && (
                 <div style={{ margin: "4px 8px", borderTop: "1px solid var(--border)" }} />
               )}
 
-              {/* Custom providers */}
-              {loading ? (
+              {/* Custom providers — admin only */}
+              {isAdmin && (loading ? (
                 <div style={{ padding: "10px 8px", fontSize: 12, color: "var(--text-muted)" }}>Loading…</div>
               ) : providers.map(([pName, pData]) => {
                 const isProviderSelected = selection?.type === "provider" && selection.name === pName;
@@ -1691,22 +1692,24 @@ export function ModelsConfig({ onClose }: { onClose: () => void }) {
                     </div>
                   </div>
                 );
-              })}
+              }))}
             </div>
 
-            {/* Add provider */}
-            <div style={{ borderTop: "1px solid var(--border)", padding: "8px 6px" }}>
-              <button onClick={() => setPickerOpen(true)} style={{
-                display: "flex", alignItems: "center", justifyContent: "center", gap: 5,
-                width: "100%", padding: "6px 0", background: "none", border: "1px dashed var(--border)", borderRadius: 5,
-                color: "var(--text-muted)", cursor: "pointer", fontSize: 12,
-              }}
-                onMouseEnter={(e) => { e.currentTarget.style.borderColor = "var(--accent)"; e.currentTarget.style.color = "var(--accent)"; }}
-                onMouseLeave={(e) => { e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.color = "var(--text-muted)"; }}
-              >
-                + Add provider
-              </button>
-            </div>
+            {/* Add provider — admin only */}
+            {isAdmin && (
+              <div style={{ borderTop: "1px solid var(--border)", padding: "8px 6px" }}>
+                <button onClick={() => setPickerOpen(true)} style={{
+                  display: "flex", alignItems: "center", justifyContent: "center", gap: 5,
+                  width: "100%", padding: "6px 0", background: "none", border: "1px dashed var(--border)", borderRadius: 5,
+                  color: "var(--text-muted)", cursor: "pointer", fontSize: 12,
+                }}
+                  onMouseEnter={(e) => { e.currentTarget.style.borderColor = "var(--accent)"; e.currentTarget.style.color = "var(--accent)"; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.color = "var(--text-muted)"; }}
+                >
+                  + Add provider
+                </button>
+              </div>
+            )}
           </div>
 
           {/* Right: detail */}
@@ -1719,32 +1722,34 @@ export function ModelsConfig({ onClose }: { onClose: () => void }) {
           </div>
         </div>
 
-        {/* Footer */}
+        {/* Footer — admin 才有 Save 按钮(普通用户不能编辑 models.json) */}
         <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 10, padding: "10px 18px", borderTop: "1px solid var(--border)", flexShrink: 0 }}>
           {saveError && <span style={{ fontSize: 12, color: "#f87171", flex: 1 }}>{saveError}</span>}
           <button onClick={onClose} style={{ padding: "6px 14px", background: "none", border: "1px solid var(--border)", borderRadius: 6, color: "var(--text-muted)", cursor: "pointer", fontSize: 13 }}>
-            Cancel
+            {isAdmin ? "Cancel" : "Close"}
           </button>
-          <button onClick={handleSave} disabled={saving || savedOk} style={{
-            position: "relative",
-            padding: "6px 16px",
-            minWidth: 92,
-            background: savedOk ? "#16a34a" : saving ? "var(--bg-panel)" : "var(--accent)",
-            border: "none", borderRadius: 6,
-            color: savedOk ? "#fff" : saving ? "var(--text-muted)" : "#fff",
-            cursor: (saving || savedOk) ? "default" : "pointer", fontSize: 13, fontWeight: 600,
-            display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6,
-            transition: "background-color 0.2s ease, color 0.2s ease",
-            animation: savedOk ? "saved-pop 0.45s ease" : undefined,
-          }}>
-            {savedOk && (
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"
-                style={{ strokeDasharray: 18, animation: "saved-check-draw 0.35s ease forwards", flexShrink: 0 }}>
-                <polyline points="20 6 9 17 4 12" />
-              </svg>
-            )}
-            <span>{savedOk ? "Saved" : saving ? "Saving…" : "Save"}</span>
-          </button>
+          {isAdmin && (
+            <button onClick={handleSave} disabled={saving || savedOk} style={{
+              position: "relative",
+              padding: "6px 16px",
+              minWidth: 92,
+              background: savedOk ? "#16a34a" : saving ? "var(--bg-panel)" : "var(--accent)",
+              border: "none", borderRadius: 6,
+              color: savedOk ? "#fff" : saving ? "var(--text-muted)" : "#fff",
+              cursor: (saving || savedOk) ? "default" : "pointer", fontSize: 13, fontWeight: 600,
+              display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6,
+              transition: "background-color 0.2s ease, color 0.2s ease",
+              animation: savedOk ? "saved-pop 0.45s ease" : undefined,
+            }}>
+              {savedOk && (
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"
+                  style={{ strokeDasharray: 18, animation: "saved-check-draw 0.35s ease forwards", flexShrink: 0 }}>
+                  <polyline points="20 6 9 17 4 12" />
+                </svg>
+              )}
+              <span>{savedOk ? "Saved" : saving ? "Saving…" : "Save"}</span>
+            </button>
+          )}
         </div>
       </div>
     </div>

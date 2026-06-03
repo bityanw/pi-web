@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
 import { join, dirname } from "path";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
+import { requireAdmin } from "@/lib/auth/current-user";
 
 export const dynamic = "force-dynamic";
 
@@ -26,17 +27,33 @@ function writeModelsJson(data: Record<string, unknown>): void {
   writeFileSync(path, JSON.stringify(data, null, 2), "utf8");
 }
 
+// GET /api/models-config
+// admin 看到完整内容,普通用户看到空(他们不应该在 ModelsConfig 里编辑)
 export async function GET() {
-  return NextResponse.json(readModelsJson());
+  try {
+    const { getCurrentUser } = await import("@/lib/auth/current-user");
+    const user = await getCurrentUser();
+    if (user?.role === "admin") {
+      return NextResponse.json(readModelsJson());
+    }
+    return NextResponse.json({ providers: {} });
+  } catch (e) {
+    return NextResponse.json({ providers: {} });
+  }
 }
 
+// PUT /api/models-config
+// admin 才能编辑
 export async function PUT(req: Request) {
   try {
+    await requireAdmin();
     const body = await req.json() as Record<string, unknown>;
     writeModelsJson(body);
-    // Model registry refreshes on each /api/models request (no local cache to invalidate)
     return NextResponse.json({ success: true });
-  } catch (error) {
-    return NextResponse.json({ error: String(error) }, { status: 500 });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    if (msg === "Not authenticated") return NextResponse.json({ error: msg }, { status: 401 });
+    if (msg === "Admin required") return NextResponse.json({ error: msg }, { status: 403 });
+    return NextResponse.json({ error: msg }, { status: 500 });
   }
 }
