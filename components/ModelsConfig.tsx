@@ -1015,7 +1015,7 @@ interface AdminDefaultConfig {
 
 interface AvailableModel { id: string; name: string; provider: string }
 
-function AdminDefaultDetail({ onClose, onSaved }: { onClose: () => void; onSaved?: () => void }) {
+function AdminDefaultDetail({ isAdmin, onClose, onSaved }: { isAdmin: boolean; onClose: () => void; onSaved?: () => void }) {
   const [config, setConfig] = useState<AdminDefaultConfig | null>(null);
   const [models, setModels] = useState<AvailableModel[]>([]);
   const [loading, setLoading] = useState(true);
@@ -1092,99 +1092,143 @@ function AdminDefaultDetail({ onClose, onSaved }: { onClose: () => void; onSaved
           🤖 系统默认模型
         </h3>
         <p style={{ margin: "4px 0 0", fontSize: 12, color: "var(--text-muted)", lineHeight: 1.6 }}>
-          这里配置的模型 + Key 会被作为<strong>所有用户</strong>的默认。
-          用户登录后看到的主页 model 下拉默认就是这个,可以改成别的。
+          {isAdmin ? (
+            <>这里配置的模型 + Key 会被作为<strong>所有用户</strong>的默认。
+            用户登录后看到的主页 model 下拉默认就是这个,可以改成别的。</>
+          ) : (
+            <>所有用户共享的默认 model 配在这里,只有管理员能改。普通用户能看不能用。</>
+          )}
         </p>
       </div>
 
       {loading ? <p style={{ color: "var(--text-muted)" }}>加载中…</p> : (
         <>
-          {config?.hasApiKey && (
+          {config?.hasApiKey ? (
             <div style={{
-              background: "rgba(34,197,94,0.08)",
-              border: "1px solid rgba(34,197,94,0.25)",
+              background: isAdmin ? "rgba(34,197,94,0.08)" : "rgba(59,130,246,0.06)",
+              border: `1px solid ${isAdmin ? "rgba(34,197,94,0.25)" : "rgba(59,130,246,0.2)"}`,
               borderRadius: 6, padding: "10px 14px", marginBottom: 18,
-              fontSize: 12, color: "#166534",
+              fontSize: 12,
+              color: isAdmin ? "#166534" : "#1e40af",
             }}>
               ✅ 当前已配置:<strong style={{ marginLeft: 4 }}>{config.displayName ?? config.modelId}</strong>
               <span style={{ marginLeft: 8, color: "#666" }}>· {config.provider}</span>
-              <span style={{ marginLeft: 8 }}>· Key ··{config.apiKeyLast4}</span>
+              {isAdmin && config.apiKeyLast4 && (
+                <span style={{ marginLeft: 8 }}>· Key ··{config.apiKeyLast4}</span>
+              )}
               {config.updatedBy && <span style={{ marginLeft: 8 }}>· by {config.updatedBy}</span>}
               {config.updatedAt && <span style={{ marginLeft: 8 }}>· {new Date(config.updatedAt).toLocaleString("zh-CN")}</span>}
             </div>
-          )}
-
-          <Field label="Provider">
-            <select
-              value={provider}
-              onChange={(e) => { setProvider(e.target.value); setModelId(""); }}
-              style={{ ...inputStyle, color: provider ? "var(--text)" : "var(--text-dim)" }}
-            >
-              <option value="">— 选择 provider —</option>
-              {providers.map((p) => <option key={p} value={p}>{p}</option>)}
-            </select>
-          </Field>
-          <Field label="Model">
-            <select
-              value={modelId}
-              onChange={(e) => setModelId(e.target.value)}
-              style={{ ...inputStyle, color: modelId ? "var(--text)" : "var(--text-dim)" }}
-              disabled={!provider}
-            >
-              <option value="">— {provider ? "选择 model" : "先选 provider"} —</option>
-              {modelsForProvider.map((m) => (
-                <option key={m.id} value={m.id}>{m.name}{m.name !== m.id ? ` (${m.id})` : ""}</option>
-              ))}
-            </select>
-          </Field>
-          <Field label="API Key">
-            <input
-              type="password"
-              value={apiKey}
-              onChange={(e) => setApiKey(e.target.value)}
-              placeholder={config?.hasApiKey ? `当前 ··${config.apiKeyLast4}(输入新 key 覆盖)` : "sk-..."}
-              style={inputStyle}
-              autoComplete="off"
-              spellCheck={false}
-            />
-          </Field>
-
-          {error && (
-            <div style={{ padding: "8px 12px", background: "#fff0f0", border: "1px solid #ffcccc", color: "#c00", fontSize: 12, borderRadius: 4, marginBottom: 10 }}>
-              {error}
+          ) : (
+            <div style={{
+              background: "rgba(250,204,21,0.06)",
+              border: "1px solid rgba(250,204,21,0.25)",
+              borderRadius: 6, padding: "10px 14px", marginBottom: 18,
+              fontSize: 12, color: "#854d0e",
+            }}>
+              ⚠️ 系统默认模型未配置{isAdmin ? "(下面填上即可)" : ""}
             </div>
           )}
 
-          <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
-            <button
-              onClick={save}
-              disabled={busy || !provider || !modelId || !apiKey.trim() || savedOk}
-              style={{
-                padding: "8px 18px",
-                background: savedOk ? "#16a34a" : (busy || !provider || !modelId || !apiKey.trim() ? "#999" : "#0a7"),
-                color: "white", border: 0, borderRadius: 4, cursor: "pointer", fontSize: 13, fontWeight: 600,
-              }}
-            >
-              {savedOk ? "✓ 已保存" : busy ? "保存中…" : "保存"}
-            </button>
-            {config?.hasApiKey && (
-              <button
-                onClick={remove}
-                disabled={busy}
-                style={{
-                  padding: "8px 14px",
-                  background: "transparent", color: "#c00",
-                  border: "1px solid #fcc", borderRadius: 4, cursor: "pointer", fontSize: 13,
-                }}
-              >
-                删除默认模型
-              </button>
-            )}
-            <button onClick={onClose} style={{
-              padding: "8px 14px", background: "transparent", color: "#666",
-              border: "1px solid #ddd", borderRadius: 4, cursor: "pointer", fontSize: 13,
-            }}>关闭</button>
-          </div>
+          {isAdmin ? (
+            <>
+              <Field label="Provider">
+                <select
+                  value={provider}
+                  onChange={(e) => { setProvider(e.target.value); setModelId(""); }}
+                  style={{ ...inputStyle, color: provider ? "var(--text)" : "var(--text-dim)" }}
+                >
+                  <option value="">— 选择 provider —</option>
+                  {providers.map((p) => <option key={p} value={p}>{p}</option>)}
+                </select>
+              </Field>
+              <Field label="Model">
+                <select
+                  value={modelId}
+                  onChange={(e) => setModelId(e.target.value)}
+                  style={{ ...inputStyle, color: modelId ? "var(--text)" : "var(--text-dim)" }}
+                  disabled={!provider}
+                >
+                  <option value="">— {provider ? "选择 model" : "先选 provider"} —</option>
+                  {modelsForProvider.map((m) => (
+                    <option key={m.id} value={m.id}>{m.name}{m.name !== m.id ? ` (${m.id})` : ""}</option>
+                  ))}
+                </select>
+              </Field>
+              <Field label="API Key">
+                <input
+                  type="password"
+                  value={apiKey}
+                  onChange={(e) => setApiKey(e.target.value)}
+                  placeholder={config?.hasApiKey ? `当前 ··${config.apiKeyLast4}(输入新 key 覆盖)` : "sk-..."}
+                  style={inputStyle}
+                  autoComplete="off"
+                  spellCheck={false}
+                />
+              </Field>
+
+              {error && (
+                <div style={{ padding: "8px 12px", background: "#fff0f0", border: "1px solid #ffcccc", color: "#c00", fontSize: 12, borderRadius: 4, marginBottom: 10 }}>
+                  {error}
+                </div>
+              )}
+
+              <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
+                <button
+                  onClick={save}
+                  disabled={busy || !provider || !modelId || !apiKey.trim() || savedOk}
+                  style={{
+                    padding: "8px 18px",
+                    background: savedOk ? "#16a34a" : (busy || !provider || !modelId || !apiKey.trim() ? "#999" : "#0a7"),
+                    color: "white", border: 0, borderRadius: 4, cursor: "pointer", fontSize: 13, fontWeight: 600,
+                  }}
+                >
+                  {savedOk ? "✓ 已保存" : busy ? "保存中…" : "保存"}
+                </button>
+                {config?.hasApiKey && (
+                  <button
+                    onClick={remove}
+                    disabled={busy}
+                    style={{
+                      padding: "8px 14px",
+                      background: "transparent", color: "#c00",
+                      border: "1px solid #fcc", borderRadius: 4, cursor: "pointer", fontSize: 13,
+                    }}
+                  >
+                    删除默认模型
+                  </button>
+                )}
+              </div>
+            </>
+          ) : (
+            <>
+              <Field label="Provider">
+                <input
+                  value={config?.provider ?? "未设置"}
+                  readOnly
+                  style={{ ...inputStyle, color: "var(--text)", background: "var(--bg-panel)" }}
+                />
+              </Field>
+              <Field label="Model">
+                <input
+                  value={config?.displayName ?? config?.modelId ?? "未设置"}
+                  readOnly
+                  style={{ ...inputStyle, color: "var(--text)", background: "var(--bg-panel)" }}
+                />
+              </Field>
+              <Field label="API Key">
+                <input
+                  value="••••••••(普通用户不可见)"
+                  readOnly
+                  style={{ ...inputStyle, color: "var(--text-muted)", background: "var(--bg-panel)" }}
+                />
+              </Field>
+              <p style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>
+                🔒 您是普通用户,无法修改或查看默认 key。
+                如需使用其他 model,可在 chat 下拉中切换;需要自己的 key,在左侧 OAuth/API key provider 列表里配。
+              </p>
+            </>
+          )}
 
           <div style={{ marginTop: 20, padding: 12, background: "rgba(59,130,246,0.06)", border: "1px solid rgba(59,130,246,0.2)", borderRadius: 6, color: "#1e40af", fontSize: 11, lineHeight: 1.7 }}>
             💡 <strong>解析优先级</strong>(从高到低):<br />
@@ -1507,7 +1551,7 @@ export function ModelsConfig({ onClose }: { onClose: () => void }) {
       return <ApiKeyDetail key={p.id} provider={p} onRefresh={loadApiKeyProviders} />;
     }
     if (selection.type === "adminDefault") {
-      return <AdminDefaultDetail key="adminDefault" onClose={onClose} onSaved={() => loadApiKeyProviders()} />;
+      return <AdminDefaultDetail key="adminDefault" isAdmin={isAdmin} onClose={onClose} onSaved={() => loadApiKeyProviders()} />;
     }
     if (selection.type === "provider") {
       const provider = config.providers?.[selection.name];
@@ -1557,26 +1601,30 @@ export function ModelsConfig({ onClose }: { onClose: () => void }) {
           {/* Left: tree */}
           <div style={{ width: 210, borderRight: "1px solid var(--border)", display: "flex", flexDirection: "column", flexShrink: 0, background: "var(--bg-panel)" }}>
             <div style={{ flex: 1, overflowY: "auto", padding: "8px 6px" }}>
-              {/* Admin: 系统默认 model section */}
-              {isAdmin && (
-                <div
-                  onClick={() => setSelection({ type: "adminDefault" })}
-                  style={{
-                    display: "flex", alignItems: "center", gap: 7, padding: "5px 8px", borderRadius: 5,
-                    cursor: "pointer",
-                    background: selection?.type === "adminDefault" ? "var(--bg-selected)" : "none",
-                  }}
-                  onMouseEnter={(e) => { if (selection?.type !== "adminDefault") e.currentTarget.style.background = "var(--bg-hover)"; }}
-                  onMouseLeave={(e) => { if (selection?.type !== "adminDefault") e.currentTarget.style.background = "none"; }}
-                >
-                  <span style={{ fontSize: 14 }}>🤖</span>
-                  <span style={{ fontSize: 12, color: "var(--text)", fontWeight: 600, flex: 1 }}>系统默认 model</span>
+              {/* 系统默认 model — admin 可编辑,普通用户只读 */}
+              <div
+                onClick={() => setSelection({ type: "adminDefault" })}
+                style={{
+                  display: "flex", alignItems: "center", gap: 7, padding: "5px 8px", borderRadius: 5,
+                  cursor: "pointer",
+                  background: selection?.type === "adminDefault" ? "var(--bg-selected)" : "none",
+                }}
+                onMouseEnter={(e) => { if (selection?.type !== "adminDefault") e.currentTarget.style.background = "var(--bg-hover)"; }}
+                onMouseLeave={(e) => { if (selection?.type !== "adminDefault") e.currentTarget.style.background = "none"; }}
+              >
+                <span style={{ fontSize: 14 }}>🤖</span>
+                <span style={{ fontSize: 12, color: "var(--text)", fontWeight: 600, flex: 1 }}>系统默认 model</span>
+                {isAdmin ? (
                   <span style={{
                     fontSize: 9, fontWeight: 600, padding: "1px 5px", borderRadius: 3,
                     background: "rgba(250,204,21,0.18)", color: "#facc15", flexShrink: 0,
                   }}>admin</span>
-                </div>
-              )}
+                ) : (
+                  <span title="普通用户只读:可见不可改" style={{
+                    fontSize: 12, flexShrink: 0, opacity: 0.6,
+                  }}>🔒</span>
+                )}
+              </div>
 
               {/* Active OAuth subscriptions */}
               {activeOAuth.map((p) => {
@@ -1628,13 +1676,12 @@ export function ModelsConfig({ onClose }: { onClose: () => void }) {
               })}
 
               {/* Divider before custom providers, only when there are active managed providers */}
-              {/* 只有 admin 看得到 custom providers + Add provider 按钮 */}
-              {isAdmin && (activeOAuth.length > 0 || activeApiKey.length > 0) && providers.length > 0 && (
+              {(activeOAuth.length > 0 || activeApiKey.length > 0) && providers.length > 0 && (
                 <div style={{ margin: "4px 8px", borderTop: "1px solid var(--border)" }} />
               )}
 
-              {/* Custom providers — admin only */}
-              {isAdmin && (loading ? (
+              {/* Custom providers */}
+              {loading ? (
                 <div style={{ padding: "10px 8px", fontSize: 12, color: "var(--text-muted)" }}>Loading…</div>
               ) : providers.map(([pName, pData]) => {
                 const isProviderSelected = selection?.type === "provider" && selection.name === pName;
@@ -1692,24 +1739,22 @@ export function ModelsConfig({ onClose }: { onClose: () => void }) {
                     </div>
                   </div>
                 );
-              }))}
+              })}
             </div>
 
-            {/* Add provider — admin only */}
-            {isAdmin && (
-              <div style={{ borderTop: "1px solid var(--border)", padding: "8px 6px" }}>
-                <button onClick={() => setPickerOpen(true)} style={{
-                  display: "flex", alignItems: "center", justifyContent: "center", gap: 5,
-                  width: "100%", padding: "6px 0", background: "none", border: "1px dashed var(--border)", borderRadius: 5,
-                  color: "var(--text-muted)", cursor: "pointer", fontSize: 12,
-                }}
-                  onMouseEnter={(e) => { e.currentTarget.style.borderColor = "var(--accent)"; e.currentTarget.style.color = "var(--accent)"; }}
-                  onMouseLeave={(e) => { e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.color = "var(--text-muted)"; }}
-                >
-                  + Add provider
-                </button>
-              </div>
-            )}
+            {/* Add provider */}
+            <div style={{ borderTop: "1px solid var(--border)", padding: "8px 6px" }}>
+              <button onClick={() => setPickerOpen(true)} style={{
+                display: "flex", alignItems: "center", justifyContent: "center", gap: 5,
+                width: "100%", padding: "6px 0", background: "none", border: "1px dashed var(--border)", borderRadius: 5,
+                color: "var(--text-muted)", cursor: "pointer", fontSize: 12,
+              }}
+                onMouseEnter={(e) => { e.currentTarget.style.borderColor = "var(--accent)"; e.currentTarget.style.color = "var(--accent)"; }}
+                onMouseLeave={(e) => { e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.color = "var(--text-muted)"; }}
+              >
+                + Add provider
+              </button>
+            </div>
           </div>
 
           {/* Right: detail */}
@@ -1722,34 +1767,32 @@ export function ModelsConfig({ onClose }: { onClose: () => void }) {
           </div>
         </div>
 
-        {/* Footer — admin 才有 Save 按钮(普通用户不能编辑 models.json) */}
+        {/* Footer */}
         <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 10, padding: "10px 18px", borderTop: "1px solid var(--border)", flexShrink: 0 }}>
           {saveError && <span style={{ fontSize: 12, color: "#f87171", flex: 1 }}>{saveError}</span>}
           <button onClick={onClose} style={{ padding: "6px 14px", background: "none", border: "1px solid var(--border)", borderRadius: 6, color: "var(--text-muted)", cursor: "pointer", fontSize: 13 }}>
-            {isAdmin ? "Cancel" : "Close"}
+            Cancel
           </button>
-          {isAdmin && (
-            <button onClick={handleSave} disabled={saving || savedOk} style={{
-              position: "relative",
-              padding: "6px 16px",
-              minWidth: 92,
-              background: savedOk ? "#16a34a" : saving ? "var(--bg-panel)" : "var(--accent)",
-              border: "none", borderRadius: 6,
-              color: savedOk ? "#fff" : saving ? "var(--text-muted)" : "#fff",
-              cursor: (saving || savedOk) ? "default" : "pointer", fontSize: 13, fontWeight: 600,
-              display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6,
-              transition: "background-color 0.2s ease, color 0.2s ease",
-              animation: savedOk ? "saved-pop 0.45s ease" : undefined,
-            }}>
-              {savedOk && (
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"
-                  style={{ strokeDasharray: 18, animation: "saved-check-draw 0.35s ease forwards", flexShrink: 0 }}>
-                  <polyline points="20 6 9 17 4 12" />
-                </svg>
-              )}
-              <span>{savedOk ? "Saved" : saving ? "Saving…" : "Save"}</span>
-            </button>
-          )}
+          <button onClick={handleSave} disabled={saving || savedOk} style={{
+            position: "relative",
+            padding: "6px 16px",
+            minWidth: 92,
+            background: savedOk ? "#16a34a" : saving ? "var(--bg-panel)" : "var(--accent)",
+            border: "none", borderRadius: 6,
+            color: savedOk ? "#fff" : saving ? "var(--text-muted)" : "#fff",
+            cursor: (saving || savedOk) ? "default" : "pointer", fontSize: 13, fontWeight: 600,
+            display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6,
+            transition: "background-color 0.2s ease, color 0.2s ease",
+            animation: savedOk ? "saved-pop 0.45s ease" : undefined,
+          }}>
+            {savedOk && (
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"
+                style={{ strokeDasharray: 18, animation: "saved-check-draw 0.35s ease forwards", flexShrink: 0 }}>
+                <polyline points="20 6 9 17 4 12" />
+              </svg>
+            )}
+            <span>{savedOk ? "Saved" : saving ? "Saving…" : "Save"}</span>
+          </button>
         </div>
       </div>
     </div>
