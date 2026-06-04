@@ -260,6 +260,12 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
 
   const restoredRef = useRef(false);
   const defaultCwdAttemptedRef = useRef(false);
+  // handleDefaultCwd 是 useCallback,在 L319 才定义。
+  // 这里包一个 ref 让上面的 useEffect 能用 ref.current() 调用，
+  // 避免在依赖数组里出现 "useCallback before initialization" 问题。
+  const handleDefaultCwdRef = useRef<() => Promise<void>>(async () => {});
+  // handleDefaultCwd 真正定义后,把 ref.current 指向它。
+  // (我们在后面 handleDefaultCwd = useCallback(...) 之后会赋值。)
 
   useEffect(() => {
     onCwdChange?.(selectedCwd);
@@ -297,14 +303,14 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
       }
 
       // 路径 C:新用户(无 sessions)→ 自动用 default-cwd 作为工作空间
-      // handleDefaultCwd 会调 /api/default-cwd (后端会 mkdir),然后 setSelectedCwd
+      // handleDefaultCwdRef.current 会调 /api/default-cwd (后端会 mkdir),然后 setSelectedCwd
       const defaultAttempted = defaultCwdAttemptedRef.current;
       if (!defaultAttempted) {
         defaultCwdAttemptedRef.current = true;
-        handleDefaultCwd();
+        handleDefaultCwdRef.current();
       }
     }
-  }, [loading, allSessions, selectedCwd, initialSessionId, onSelectSession, onInitialRestoreDone, handleDefaultCwd]);
+  }, [loading, allSessions, selectedCwd, initialSessionId, onSelectSession, onInitialRestoreDone]);
 
   const commitCustomPath = useCallback(() => {
     const path = customPathValue.trim();
@@ -328,6 +334,9 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
       // ignore
     }
   }, []);
+
+  // 同步 ref 以供上面 useEffect 路径 C 使用
+  handleDefaultCwdRef.current = handleDefaultCwd;
 
   // Close dropdown on outside click
   useEffect(() => {
