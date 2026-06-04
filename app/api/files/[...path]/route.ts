@@ -368,3 +368,122 @@ export async function GET(
     return NextResponse.json({ error: String(error) }, { status: 500 });
   }
 }
+
+// 单文件最大 50MB
+const MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
+
+// POST /api/files/<target-dir> — multipart/form-data, "file" 字段是要上传的文件
+// 把文件写到 <target-dir>/<filename>。目标目录必须在 allowedRoots 内(复用 GET 的安全检查)。
+export async function POST(
+  request: NextRequest,
+  { params }: { params: Promise<{ path: string[] }> }
+) {
+  try {
+    const user = await requireUser();
+    const { path: segments } = await params;
+    const targetDir = filePathFromSegments(segments);
+
+    // 1. 路径安全:必须在 allowedRoots 内
+    const allowedRoots = await getAllowedRoots(user.id);
+    if (!isPathAllowed(targetDir, allowedRoots)) {
+      return NextResponse.json({ error: "Access denied" }, { status: 403 });
+    }
+
+    // 2. targetDir 必须是已存在的目录
+    let dirStat: fs.Stats;
+    try {
+      dirStat = fs.statSync(targetDir);
+    } catch {
+      return NextResponse.json({ error: "Target directory not found" }, { status: 404 });
+    }
+    if (!dirStat.isDirectory()) {
+      return NextResponse.json({ error: "Target is not a directory" }, { status: 400 });
+    }
+
+    // 3. 先看 Content-Length 头(如果客户端给了),粗筛超大文件
+    const contentLength = request.headers.get("content-length");
+    if (contentLength && Number(contentLength) > MAX_UPLOAD_BYTES + 4096) {
+      // +4096 留 multipart boundary 的余地
+      return NextResponse.json(
+        { error: `File too large (>${MAX_UPLOAD_BYTES} bytes)` },
+        { status: 413 }
+      );
+    }
+
+    // 4. 解析 multipart/form-data
+    let form: FormData;
+    try {
+      form = await request.formData();
+    } catch (e) {
+      return NextResponse.json(
+        { error: `Failed to parse multipart body: ${String(e)}` },
+        { status: 400 }
+      );
+    }
+
+    const file = form.get("file");
+    if (!(file instanceof File)) {
+      return NextResponse.json(
+        { error: 'Missing "file" field in form data' },
+        { status: 400 }
+      );
+    }
+
+    // 5. 文件名:取 basename,防止路径穿越(../../etc/passwd 这种)
+    const rawName = file.name || "upload";
+    const safeName = path.basename(rawName);
+    if (!safeName || safeName === "." || safeName === "..") {
+      return NextResponse.json({ error: "Invalid filename" }, { status: 400 });
+    }
+    if (safeName !== rawName) {
+      // 用户给的名字里含路径分隔符,剥掉
+      // 这里不报错,但记录到响应里让前端能感知
+    }
+
+    // 6. 大小再校一次
+    if (file.size > MAX_UPLOAD_BYTES) {
+      return NextResponse.json(
+        { error: `File too large: ${file.size} > ${MAX_UPLOAD_BYTES}` },
+        { status: 413 }
+      );
+    }
+
+    // 7. 检查同名文件 — 默认拒绝,需要 ?overwrite=1 才覆盖
+    const overwrite = request.nextUrl.searchParams.get("overwrite") === "1";
+    const targetPath = path.join(targetDir, safeName);
+    let exists = false;
+    try {
+      fs.statSync(targetPath);
+      exists = true;
+    } catch {
+      exists = false;
+    }
+    if (exists && !overwrite) {
+      return NextResponse.json(
+        { error: `File already exists: ${safeName}`, code: "EEXISTS" },
+        { status: 409 }
+      );
+    }
+
+    // 8. 写文件
+    const buffer = Buffer.from(await file.arrayBuffer());
+    try {
+      fs.writeFileSync(targetPath, buffer);
+    } catch (e) {
+      return NextResponse.json(
+        { error: `Failed to write file: ${String(e)}` },
+        { status: 500 }
+      );
+    }
+
+    return NextResponse.json({
+      success: true,
+      path: targetPath,
+      name: safeName,
+      size: file.size,
+      overwritten: exists,
+    });
+  } catch (error) {
+    return NextResponse.json({ error: String(error) }, { status: 500 });
+  }
+}

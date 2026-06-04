@@ -1,5 +1,6 @@
 "use client";
 
+import * as React from "react";
 import { useState, useCallback, useEffect, useRef } from "react";
 import { getFileIcon, FolderIcon } from "./FileIcons";
 import { encodeFilePathForApi, getRelativeFilePath, joinFilePath } from "@/lib/file-paths";
@@ -27,6 +28,20 @@ interface Props {
   onAtMention?: (relativePath: string) => void;
 }
 
+async function uploadFile(dirPath: string, file: File, overwrite = false): Promise<{ ok: boolean; name?: string; error?: string }> {
+  const encoded = encodeFilePathForApi(dirPath);
+  const postUrl = `/api/files/${encoded}${overwrite ? "?overwrite=1" : ""}`;
+  const form = new FormData();
+  form.append("file", file);
+  const res = await fetch(postUrl, { method: "POST", body: form });
+  if (res.ok) {
+    const data = await res.json().catch(() => ({}));
+    return { ok: true, name: data.name ?? file.name };
+  }
+  const data = await res.json().catch(() => ({}));
+  return { ok: false, error: data.error ?? `HTTP ${res.status}` };
+}
+
 async function fetchEntries(dirPath: string): Promise<FileNode[]> {
   const encoded = encodeFilePathForApi(dirPath);
   const res = await fetch(`/api/files/${encoded}?type=list`);
@@ -40,6 +55,100 @@ async function fetchEntries(dirPath: string): Promise<FileNode[]> {
     children: e.isDir ? [] : undefined,
     loaded: !e.isDir,
   }));
+}
+
+function UploadButton({ targetDir, hasMentionButton, onUploaded, inline = false }: { targetDir: string; hasMentionButton: boolean; onUploaded: () => void; inline?: boolean }) {
+  const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const handleClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setError(null);
+    inputRef.current?.click();
+  };
+
+  const handleChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    setUploading(true);
+    setError(null);
+    let okCount = 0;
+    let failMessages: string[] = [];
+    for (const file of Array.from(files)) {
+      const r = await uploadFile(targetDir, file, false);
+      if (r.ok) okCount++;
+      else if (r.error?.includes("already exists")) {
+        // 同名:弹一个简单的 confirm 让用户选
+        const overwrite = typeof window !== "undefined" && window.confirm(`File "${file.name}" already exists. Overwrite?`);
+        if (overwrite) {
+          const r2 = await uploadFile(targetDir, file, true);
+          if (r2.ok) okCount++;
+          else failMessages.push(`${file.name}: ${r2.error}`);
+        } else {
+          failMessages.push(`${file.name}: skipped (already exists)`);
+        }
+      } else {
+        failMessages.push(`${file.name}: ${r.error}`);
+      }
+    }
+    setUploading(false);
+    // 清空 input 以便下次能选同名文件
+    e.target.value = "";
+    if (failMessages.length > 0) setError(failMessages.join("\n"));
+    if (okCount > 0) onUploaded();
+  };
+
+  const baseStyle: React.CSSProperties = {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 4,
+    padding: inline ? "0 10px" : "0 8px",
+    height: inline ? 22 : 20,
+    background: "var(--bg-panel)",
+    border: `1px solid ${error ? "#f87171" : "var(--border)"}`,
+    borderRadius: 4,
+    color: error ? "#f87171" : "var(--accent)",
+    cursor: uploading ? "wait" : "pointer",
+    fontSize: 11,
+    fontWeight: 600,
+    whiteSpace: "nowrap",
+    opacity: uploading ? 0.6 : 1,
+  };
+
+  const positionStyle: React.CSSProperties = inline
+    ? { position: "relative", margin: "4px 4px 6px 4px" }
+    : {
+        position: "absolute",
+        right: hasMentionButton ? 76 : 4, // mention 按钮占 72px 宽,上传按钮在它左边
+        top: "50%",
+        transform: "translateY(-50%)",
+      };
+
+  return (
+    <>
+      <button
+        onClick={handleClick}
+        title={error ?? `Upload files to: ${targetDir}`}
+        style={{ ...baseStyle, ...positionStyle }}
+      >
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+          <polyline points="17 8 12 3 7 8" />
+          <line x1="12" y1="3" x2="12" y2="15" />
+        </svg>
+        {uploading ? "uploading…" : "upload"}
+      </button>
+      <input
+        ref={inputRef}
+        type="file"
+        multiple
+        style={{ display: "none" }}
+        onChange={handleChange}
+      />
+    </>
+  );
 }
 
 function TreeNode({
@@ -191,6 +300,18 @@ function TreeNode({
             mention
           </button>
         )}
+        {node.isDir && hovered && (
+          <UploadButton
+            targetDir={node.fullPath}
+            hasMentionButton={!!onAtMention}
+            onUploaded={() => {
+              // 触发刷新:让父组件 reload
+              if (typeof window !== "undefined") {
+                window.dispatchEvent(new CustomEvent("pi:file-explorer-refresh"));
+              }
+            }}
+          />
+        )}
       </div>
       {node.isDir && open && (
         <div>
@@ -256,6 +377,16 @@ export function FileExplorer({ cwd, onOpenFile, refreshKey, onAtMention }: Props
 
   return (
     <div style={{ padding: "2px 4px" }}>
+      <UploadButton
+        targetDir={cwd}
+        hasMentionButton={false}
+        inline
+        onUploaded={() => {
+          if (typeof window !== "undefined") {
+            window.dispatchEvent(new CustomEvent("pi:file-explorer-refresh"));
+          }
+        }}
+      />
       {roots.map((node) => (
         <TreeNode
           key={node.fullPath}

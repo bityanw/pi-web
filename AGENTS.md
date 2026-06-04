@@ -1,4 +1,4 @@
-# Pi Agent Web - Development Notes
+# Huijin Agent - Development Notes
 
 ## Quick Start
 

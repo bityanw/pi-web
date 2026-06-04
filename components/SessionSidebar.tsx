@@ -158,7 +158,7 @@ function PiAgentTitle() {
   const [scrambling, setScrambling] = useState(false);
   const revertTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const target = showVersion ? `${process.env.NEXT_PUBLIC_APP_VERSION ?? "0.0.0"}p${process.env.NEXT_PUBLIC_PI_VERSION ?? "0.0.0"}` : "Pi Agent Web";
+  const target = showVersion ? `${process.env.NEXT_PUBLIC_APP_VERSION ?? "0.0.0"}p${process.env.NEXT_PUBLIC_PI_VERSION ?? "0.0.0"}` : "Huijin Agent";
   const display = useScramble(target, scrambling);
 
   const triggerScramble = useCallback((toVersion: boolean) => {
@@ -245,6 +245,13 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     if (explorerRefreshKey !== undefined) setExplorerKey((k) => k + 1);
   }, [explorerRefreshKey]);
 
+  // 监听文件上传事件,自动刷新 explorer
+  useEffect(() => {
+    const onRefresh = () => setExplorerKey((k) => k + 1);
+    window.addEventListener("pi:file-explorer-refresh", onRefresh);
+    return () => window.removeEventListener("pi:file-explorer-refresh", onRefresh);
+  }, []);
+
   useEffect(() => {
     fetch("/api/home").then((r) => r.json()).then((d: { home?: string }) => {
       if (d.home) setHomeDir(d.home);
@@ -252,6 +259,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   }, []);
 
   const restoredRef = useRef(false);
+  const defaultCwdAttemptedRef = useRef(false);
 
   useEffect(() => {
     onCwdChange?.(selectedCwd);
@@ -259,25 +267,44 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
 
   // Auto-select cwd and restore session from URL on first load
   useEffect(() => {
-    if (allSessions.length === 0) return;
+    // 等 sessions 加载完再决定 selectedCwd
+    if (loading) return;
 
     if (selectedCwd === null) {
-      // If restoring a session, set cwd to match that session
+      // 路径 A:URL 带 initialSessionId → 切到那个 session
       if (initialSessionId && !restoredRef.current) {
         restoredRef.current = true;
-        const target = allSessions.find((s) => s.id === initialSessionId);
-        if (target) {
-          setSelectedCwd(target.cwd);
-          onSelectSession(target, true);
-          return;
+        if (allSessions.length > 0) {
+          const target = allSessions.find((s) => s.id === initialSessionId);
+          if (target) {
+            setSelectedCwd(target.cwd);
+            onSelectSession(target, true);
+            return;
+          }
         }
         // Session not found — notify parent so it can show the placeholder
         onInitialRestoreDone?.();
+        return;
       }
-      const cwds = getRecentCwds(allSessions);
-      if (cwds.length > 0) setSelectedCwd(cwds[0]);
+
+      // 路径 B:老用户(sessions > 0)→ 恢复最近用过的 cwd
+      if (allSessions.length > 0) {
+        const cwds = getRecentCwds(allSessions);
+        if (cwds.length > 0) {
+          setSelectedCwd(cwds[0]);
+          return;
+        }
+      }
+
+      // 路径 C:新用户(无 sessions)→ 自动用 default-cwd 作为工作空间
+      // handleDefaultCwd 会调 /api/default-cwd (后端会 mkdir),然后 setSelectedCwd
+      const defaultAttempted = defaultCwdAttemptedRef.current;
+      if (!defaultAttempted) {
+        defaultCwdAttemptedRef.current = true;
+        handleDefaultCwd();
+      }
     }
-  }, [allSessions, selectedCwd, initialSessionId, onSelectSession, onInitialRestoreDone]);
+  }, [loading, allSessions, selectedCwd, initialSessionId, onSelectSession, onInitialRestoreDone, handleDefaultCwd]);
 
   const commitCustomPath = useCallback(() => {
     const path = customPathValue.trim();
