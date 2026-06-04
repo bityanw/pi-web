@@ -174,6 +174,7 @@ function SecretTextInput({
   autoComplete = "off",
   spellCheck = false,
   style,
+  allowReveal = true,
 }: {
   value: string;
   onChange: (v: string) => void;
@@ -183,6 +184,8 @@ function SecretTextInput({
   autoComplete?: string;
   spellCheck?: boolean;
   style?: React.CSSProperties;
+  /** false 则隐藏眼睛按钮(普通用户),key 始终是 type="password" */
+  allowReveal?: boolean;
 }) {
   const [visible, setVisible] = useState(false);
 
@@ -198,15 +201,16 @@ function SecretTextInput({
         onChange={(e) => onChange(e.target.value)}
         onKeyDown={onKeyDown}
         placeholder={placeholder}
-        style={{ ...inputStyle, paddingRight: 34, fontFamily: mono ? "var(--font-mono)" : "inherit" }}
+        style={{ ...inputStyle, paddingRight: allowReveal ? 34 : 12, fontFamily: mono ? "var(--font-mono)" : "inherit" }}
         autoComplete={autoComplete}
         spellCheck={spellCheck}
       />
-      <button
-        type="button"
-        onClick={() => setVisible((v) => !v)}
-        aria-label={visible ? "Hide API key" : "Show API key"}
-        title={visible ? "Hide API key" : "Show API key"}
+      {allowReveal && (
+        <button
+          type="button"
+          onClick={() => setVisible((v) => !v)}
+          aria-label={visible ? "Hide API key" : "Show API key"}
+          title={visible ? "Hide API key" : "Show API key"}
         style={{
           position: "absolute",
           right: 5,
@@ -223,6 +227,8 @@ function SecretTextInput({
           alignItems: "center",
           justifyContent: "center",
         }}
+        onMouseEnter={(e) => { e.currentTarget.style.color = "var(--text)"; }}
+        onMouseLeave={(e) => { e.currentTarget.style.color = "var(--text-dim)"; }}
       >
         {visible ? (
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -237,7 +243,8 @@ function SecretTextInput({
             <circle cx="12" cy="12" r="3" />
           </svg>
         )}
-      </button>
+        </button>
+      )}
     </div>
   );
 }
@@ -312,7 +319,7 @@ function ProviderDetail({ name, provider, onChange, onRename, onDelete }: {
 
       <Field label="API Key">
         <SecretTextInput value={provider.apiKey ?? ""} onChange={(v) => set("apiKey", v || undefined)}
-          placeholder="ENV_VAR_NAME, !shell-command, or literal key" mono />
+          placeholder="ENV_VAR_NAME, !shell-command, or literal key" mono allowReveal />
         <span style={{ fontSize: 10, color: "var(--text-dim)", marginTop: 2 }}>
           Prefix with <code style={{ fontFamily: "var(--font-mono)" }}>!</code> to run a shell command, or use an env var name
         </span>
@@ -954,6 +961,7 @@ function ApiKeyDetail({ provider, onRefresh }: { provider: ApiKeyProvider; onRef
             autoComplete="off"
             spellCheck={false}
             mono
+            allowReveal={false}
           />
           <button
             onClick={handleSave}
