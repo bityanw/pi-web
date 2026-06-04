@@ -1019,6 +1019,7 @@ function AdminDefaultDetail({ isAdmin, onClose, onSaved }: { isAdmin: boolean; o
   const [config, setConfig] = useState<AdminDefaultConfig | null>(null);
   const [models, setModels] = useState<AvailableModel[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [provider, setProvider] = useState("");
   const [modelId, setModelId] = useState("");
   const [apiKey, setApiKey] = useState("");
@@ -1028,23 +1029,34 @@ function AdminDefaultDetail({ isAdmin, onClose, onSaved }: { isAdmin: boolean; o
 
   async function load() {
     setLoading(true);
-    const [ml, cfg] = await Promise.all([
-      fetch("/api/models").then((r) => r.json()) as Promise<{ modelList: AvailableModel[] }>,
-      fetch("/api/admin/default-model").then((r) => r.json()) as Promise<{ config: AdminDefaultConfig | null }>,
-    ]);
-    setModels(ml.modelList ?? []);
-    setConfig(cfg.config);
-    if (cfg.config) {
-      setProvider(cfg.config.provider);
-      setModelId(cfg.config.modelId);
+    setLoadError(null);
+    try {
+      const [ml, cfg] = await Promise.all([
+        fetch("/api/models").then((r) => r.json()) as Promise<{ modelList: AvailableModel[] }>,
+        fetch("/api/admin/default-model").then((r) => r.json()) as Promise<{ config: AdminDefaultConfig | null }>,
+      ]);
+      setModels(ml.modelList ?? []);
+      setConfig(cfg.config);
+      if (cfg.config) {
+        setProvider(cfg.config.provider);
+        setModelId(cfg.config.modelId);
+      }
+    } catch (e) {
+      setLoadError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   }
 
   useEffect(() => { load(); }, []);
 
   const providers = Array.from(new Set(models.map((m) => m.provider))).sort();
   const modelsForProvider = provider ? models.filter((m) => m.provider === provider) : [];
+  // 关键:检测保存的 provider/modelId 是否在 registry 列表里
+  // 如果不在(如 key 失效 / model 拼错),在 dropdown 里加一个虚拟 "当前已保存" option
+  // 否则 dropdown 会显示空白,用户以为 model 不见了
+  const providerInList = providers.includes(provider);
+  const modelInList = modelsForProvider.some((m) => m.id === modelId);
 
   async function save() {
     setError(null); setSavedOk(false); setBusy(true);
@@ -1062,11 +1074,11 @@ function AdminDefaultDetail({ isAdmin, onClose, onSaved }: { isAdmin: boolean; o
       if (!r.ok) throw new Error(d.error || `HTTP ${r.status}`);
       setSavedOk(true);
       setApiKey("");
-      setTimeout(() => setSavedOk(false), 2000);
+      setTimeout(() => setSavedOk(false), 3000);
       await load();
       onSaved?.();
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(`保存失败: ${e instanceof Error ? e.message : String(e)}`);
     } finally { setBusy(false); }
   }
 
@@ -1081,8 +1093,22 @@ function AdminDefaultDetail({ isAdmin, onClose, onSaved }: { isAdmin: boolean; o
       await load();
       onSaved?.();
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(`删除失败: ${e instanceof Error ? e.message : String(e)}`);
     } finally { setBusy(false); }
+  }
+
+  if (loadError) {
+    return (
+      <div style={{ flex: 1, overflowY: "auto", padding: "20px 24px" }}>
+        <h3 style={{ margin: 0, fontSize: 14, fontWeight: 600, color: "var(--text)" }}>🤖 系统默认模型</h3>
+        <div style={{ marginTop: 16, padding: 12, background: "#fff0f0", border: "1px solid #ffcccc", color: "#c00", fontSize: 12, borderRadius: 4 }}>
+          ❌ 加载失败:{loadError}
+          <button onClick={load} style={{ marginLeft: 12, padding: "4px 12px", background: "#c00", color: "#fff", border: 0, borderRadius: 4, cursor: "pointer", fontSize: 12 }}>
+            重试
+          </button>
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -1130,6 +1156,12 @@ function AdminDefaultDetail({ isAdmin, onClose, onSaved }: { isAdmin: boolean; o
             </div>
           )}
 
+          {savedOk && (
+            <div style={{ marginBottom: 12, padding: "8px 12px", background: "rgba(34,197,94,0.12)", border: "1px solid rgba(34,197,94,0.3)", color: "#166534", fontSize: 12, borderRadius: 4, fontWeight: 600 }}>
+              ✓ 已保存:{provider}/{modelId}。所有用户登录后默认使用这个。
+            </div>
+          )}
+
           {isAdmin ? (
             <>
               <Field label="Provider">
@@ -1139,6 +1171,9 @@ function AdminDefaultDetail({ isAdmin, onClose, onSaved }: { isAdmin: boolean; o
                   style={{ ...inputStyle, color: provider ? "var(--text)" : "var(--text-dim)" }}
                 >
                   <option value="">— 选择 provider —</option>
+                  {!providerInList && provider && (
+                    <option value={provider}>⚠️ {provider}(当前已保存,不在 registry)</option>
+                  )}
                   {providers.map((p) => <option key={p} value={p}>{p}</option>)}
                 </select>
               </Field>
@@ -1150,6 +1185,9 @@ function AdminDefaultDetail({ isAdmin, onClose, onSaved }: { isAdmin: boolean; o
                   disabled={!provider}
                 >
                   <option value="">— {provider ? "选择 model" : "先选 provider"} —</option>
+                  {!modelInList && modelId && (
+                    <option value={modelId}>⚠️ {modelId}(当前已保存,不在 registry)</option>
+                  )}
                   {modelsForProvider.map((m) => (
                     <option key={m.id} value={m.id}>{m.name}{m.name !== m.id ? ` (${m.id})` : ""}</option>
                   ))}
@@ -1165,6 +1203,11 @@ function AdminDefaultDetail({ isAdmin, onClose, onSaved }: { isAdmin: boolean; o
                   autoComplete="off"
                   spellCheck={false}
                 />
+                {config?.hasApiKey && !apiKey && (
+                  <p style={{ fontSize: 11, color: "var(--text-muted)", margin: "4px 0 0" }}>
+                    💡 不改 key 留空即可重新保存同一个 model(key 不会发送到客户端,需要重新输入)
+                  </p>
+                )}
               </Field>
 
               {error && (
@@ -1215,6 +1258,11 @@ function AdminDefaultDetail({ isAdmin, onClose, onSaved }: { isAdmin: boolean; o
                   readOnly
                   style={{ ...inputStyle, color: "var(--text)", background: "var(--bg-panel)" }}
                 />
+                {config?.modelId && config.displayName && config.modelId !== config.displayName && (
+                  <p style={{ fontSize: 11, color: "var(--text-muted)", margin: "4px 0 0", fontFamily: "var(--font-mono)" }}>
+                    id: {config.modelId}
+                  </p>
+                )}
               </Field>
               <Field label="API Key">
                 <input
